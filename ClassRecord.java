@@ -1,21 +1,24 @@
 // ClassRecord.java
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.TreeMap;
 
 public class ClassRecord implements Serializable {
     private static final long serialVersionUID = 1L;
+
     private String name;
     private ArrayList<Category> categories;
     private GradingScale gradingScale;
-    private boolean roundingEnabled;
-    private double roundingThreshold; // Rounding threshold
+    private boolean usesRounding; // Indicates if rounding is used
+    private double roundingThreshold; // Number of points for rounding
 
-    public ClassRecord(String name) {
+    public ClassRecord(String name, GradingScale gradingScale, boolean usesRounding, double roundingThreshold) {
         this.name = name;
-        categories = new ArrayList<>();
-        gradingScale = new GradingScale();
-        roundingEnabled = false;
-        roundingThreshold = 0.0;
+        this.categories = new ArrayList<>();
+        this.gradingScale = gradingScale;
+        this.usesRounding = usesRounding;
+        this.roundingThreshold = roundingThreshold;
     }
 
     public String getName() {
@@ -30,101 +33,115 @@ public class ClassRecord implements Serializable {
         return categories;
     }
 
-    public Category getCategoryByName(String categoryName) {
-        for (Category cat : categories) {
-            if (cat.getName().equalsIgnoreCase(categoryName)) {
-                return cat;
+    public Category getCategoryByName(String name) {
+        for (Category category : categories) {
+            if (category.getName().equalsIgnoreCase(name)) {
+                return category;
             }
         }
         return null;
-    }
-
-    public void setGradingScale(GradingScale scale) {
-        this.gradingScale = scale;
     }
 
     public GradingScale getGradingScale() {
         return gradingScale;
     }
 
-    public void setRoundingEnabled(boolean enabled) {
-        this.roundingEnabled = enabled;
-    }
-
-    public boolean isRoundingEnabled() {
-        return roundingEnabled;
-    }
-
-    public void setRoundingThreshold(double threshold) {
-        this.roundingThreshold = threshold;
+    public boolean isUsesRounding() {
+        return usesRounding;
     }
 
     public double getRoundingThreshold() {
         return roundingThreshold;
     }
 
-    // Method to calculate final grade
+    public void setUsesRounding(boolean usesRounding) {
+        this.usesRounding = usesRounding;
+    }
+
+    public void setRoundingThreshold(double roundingThreshold) {
+        this.roundingThreshold = roundingThreshold;
+    }
+
+    /**
+     * Calculates the final grade based on category averages and weights.
+     * For categories with no grades, assigns the average of existing category averages.
+     * Applies rounding if enabled and within the specified threshold.
+     *
+     * @return The final grade after applying rounding logic.
+     */
     public double calculateFinalGrade() {
         double finalGrade = 0.0;
-        ArrayList<Double> categoryAverages = new ArrayList<>();
-        double totalWeight = 0.0;
+        double sumWeights = 0.0;
 
-        // Step 1: Calculate averages of categories with grades
-        for (Category cat : categories) {
-            double weight = cat.getWeight();
-            totalWeight += weight;
-
-            if (!cat.getGrades().isEmpty()) {
-                double categoryAverage = cat.calculateAverage();
-                categoryAverages.add(categoryAverage);
+        // First, collect averages of categories that have grades
+        ArrayList<Double> existingAverages = new ArrayList<>();
+        for (Category category : categories) {
+            if (!category.getGrades().isEmpty()) {
+                existingAverages.add(category.calculateAverage());
             }
         }
 
-        // Step 2: Compute the average of category averages
+        // Compute the average of existing category averages
         double averageOfAverages = 0.0;
-        if (!categoryAverages.isEmpty()) {
-            double sumOfAverages = 0.0;
-            for (double avg : categoryAverages) {
-                sumOfAverages += avg;
+        if (!existingAverages.isEmpty()) {
+            double sumAverages = 0.0;
+            for (double avg : existingAverages) {
+                sumAverages += avg;
             }
-            averageOfAverages = sumOfAverages / categoryAverages.size();
-        } else {
-            // If no categories have grades, default average is 0.0
-            averageOfAverages = 0.0;
+            averageOfAverages = sumAverages / existingAverages.size();
         }
 
-        // Step 3 & 4: Calculate final grade using assigned averages
-        for (Category cat : categories) {
-            double categoryGrade;
-            double weight = cat.getWeight();
-
-            if (!cat.getGrades().isEmpty()) {
-                categoryGrade = cat.calculateAverage();
+        // Now, calculate the final grade
+        for (Category category : categories) {
+            double categoryAverage;
+            if (!category.getGrades().isEmpty()) {
+                categoryAverage = category.calculateAverage();
             } else {
-                categoryGrade = averageOfAverages;
+                // Assign average of existing categories
+                categoryAverage = averageOfAverages;
             }
-
-            finalGrade += categoryGrade * (weight / 100.0);
+            finalGrade += categoryAverage * (category.getWeight() / 100.0);
+            sumWeights += category.getWeight();
         }
 
-        // Step 5: Apply rounding if enabled
-        if (roundingEnabled) {
-            finalGrade = applyRounding(finalGrade);
+        // Ensure that sumWeights is approximately 100%
+        if (Math.abs(sumWeights - 100.0) > 0.01) {
+            // Optionally, handle weight normalization or alert the user
+            // For now, we'll proceed as is
+        }
+
+        // Apply rounding if enabled
+        if (usesRounding) {
+            // Retrieve the grading scale map in ascending order
+            TreeMap<Double, String> scaleMapAsc = new TreeMap<>(gradingScale.getScale());
+
+            Double nextCutoff = null;
+            for (Map.Entry<Double, String> entry : scaleMapAsc.entrySet()) {
+                if (finalGrade < entry.getKey()) {
+                    nextCutoff = entry.getKey();
+                    break;
+                }
+            }
+
+            if (nextCutoff != null) {
+                double difference = nextCutoff - finalGrade;
+                if (difference <= roundingThreshold) {
+                    finalGrade = nextCutoff;
+                }
+            }
+        } else {
+            // Round to two decimal places without rounding up
+            finalGrade = Math.round(finalGrade * 100.0) / 100.0;
         }
 
         return finalGrade;
     }
 
-    // Apply rounding logic
-    private double applyRounding(double grade) {
-        // Rounding based on threshold
-        Double nextCutoff = gradingScale.getNextHigherCutoff(grade);
-        if (nextCutoff != null && (nextCutoff - grade) <= roundingThreshold) {
-            return nextCutoff;
-        }
-        return grade;
-    }
-
+    /**
+     * Retrieves the letter grade based on the final grade.
+     *
+     * @return The corresponding letter grade.
+     */
     public String getLetterGrade() {
         double finalGrade = calculateFinalGrade();
         return gradingScale.getLetterGrade(finalGrade);

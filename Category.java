@@ -4,17 +4,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 
 public class Category implements Serializable {
-    private static final long serialVersionUID = 1L;
     private String name;
-    private double weight; // Percentage weight of this category
+    private double weight;
     private ArrayList<Double> grades;
-    private int numDropped; // Number of lowest grades to drop
+    private int numGradesDropped; // Number of lowest grades to drop
 
-    public Category(String name, double weight) {
+    public Category(String name, double weight, int numGradesDropped) {
         this.name = name;
         this.weight = weight;
-        grades = new ArrayList<>();
-        numDropped = 0;
+        this.numGradesDropped = numGradesDropped;
+        this.grades = new ArrayList<>();
     }
 
     public String getName() {
@@ -23,6 +22,18 @@ public class Category implements Serializable {
 
     public double getWeight() {
         return weight;
+    }
+
+    public ArrayList<Double> getGrades() {
+        return grades;
+    }
+
+    public int getNumGradesDropped() {
+        return numGradesDropped;
+    }
+
+    public void setNumGradesDropped(int numGradesDropped) {
+        this.numGradesDropped = numGradesDropped;
     }
 
     public void addGrade(double grade) {
@@ -41,48 +52,45 @@ public class Category implements Serializable {
         }
     }
 
-    public ArrayList<Double> getGrades() {
-        return grades;
-    }
-
-    public void setNumDropped(int numDropped) {
-        this.numDropped = numDropped;
-    }
-
-    public int getNumDropped() {
-        return numDropped;
-    }
-
     public double calculateAverage() {
         if (grades.isEmpty()) {
             return 0.0;
         }
-        ArrayList<Double> gradesCopy = new ArrayList<>(grades);
-        Collections.sort(gradesCopy);
-        // Drop the lowest grades
-        for (int i = 0; i < numDropped && !gradesCopy.isEmpty(); i++) {
-            gradesCopy.remove(0);
+
+        // Sort grades in ascending order
+        ArrayList<Double> sortedGrades = new ArrayList<>(grades);
+        Collections.sort(sortedGrades);
+
+        // Drop the lowest 'numGradesDropped' grades
+        int numGradesToConsider = sortedGrades.size() - numGradesDropped;
+        if (numGradesToConsider <= 0) {
+            // All grades are dropped
+            return 0.0;
         }
-        // Calculate average
+
         double sum = 0.0;
-        for (double grade : gradesCopy) {
-            sum += grade;
+        for (int i = numGradesDropped; i < sortedGrades.size(); i++) {
+            sum += sortedGrades.get(i);
         }
-        return sum / gradesCopy.size();
+
+        return sum / numGradesToConsider;
     }
 
-    // New methods to calculate median, highest, and lowest grades
     public double calculateMedian() {
         if (grades.isEmpty()) {
             return 0.0;
         }
-        ArrayList<Double> gradesCopy = new ArrayList<>(grades);
-        Collections.sort(gradesCopy);
-        int middle = gradesCopy.size() / 2;
-        if (gradesCopy.size() % 2 == 0) {
-            return (gradesCopy.get(middle - 1) + gradesCopy.get(middle)) / 2.0;
+
+        ArrayList<Double> sortedGrades = new ArrayList<>(grades);
+        Collections.sort(sortedGrades);
+
+        int size = sortedGrades.size();
+        if (size % 2 == 1) {
+            // Odd number of grades
+            return sortedGrades.get(size / 2);
         } else {
-            return gradesCopy.get(middle);
+            // Even number of grades
+            return (sortedGrades.get(size / 2 - 1) + sortedGrades.get(size / 2)) / 2.0;
         }
     }
 

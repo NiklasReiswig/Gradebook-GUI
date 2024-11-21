@@ -18,10 +18,10 @@ public class GradeBook implements Serializable {
         return classes;
     }
 
-    public ClassRecord getClassByName(String className) {
-        for (ClassRecord cr : classes) {
-            if (cr.getName().equalsIgnoreCase(className)) {
-                return cr;
+    public ClassRecord getClassByName(String name) {
+        for (ClassRecord classRecord : classes) {
+            if (classRecord.getName().equalsIgnoreCase(name)) {
+                return classRecord;
             }
         }
         return null;
