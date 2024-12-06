@@ -910,16 +910,11 @@ public class GradeBookGUI extends JFrame {
         }
 
         // Prompt for desired letter grade
-        // Extract letter grades from the grading scale map
         TreeMap<Double, String> scaleMap = classRecord.getGradingScale().getScale();
-        // The scale map is in descending order (from configureGradingScale)
-        // Gather all letter grades
         java.util.Set<String> letterSet = new java.util.HashSet<>(scaleMap.values());
         java.util.List<String> letterGrades = new java.util.ArrayList<>(letterSet);
-        // Sort letter grades in a user-friendly way if desired (not strictly needed)
-        // We'll trust the user to know what letter to pick from a dropdown
         String desiredLetterGrade = (String) JOptionPane.showInputDialog(this,
-                "Enter the desired letter grade (e.g., A, B+, etc.):",
+                "Select the desired letter grade:",
                 "Desired Letter Grade",
                 JOptionPane.PLAIN_MESSAGE,
                 null,
@@ -934,7 +929,7 @@ public class GradeBookGUI extends JFrame {
             return;
         }
 
-        // Prompt for remaining assignments in each category
+        // Prompt for remaining assignments
         ArrayList<Category> categories = classRecord.getCategories();
         if (categories.isEmpty()) {
             JOptionPane.showMessageDialog(this, "No categories in this class.");
@@ -957,7 +952,6 @@ public class GradeBookGUI extends JFrame {
         int result = JOptionPane.showConfirmDialog(this, panel, "Enter Remaining Assignments", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) return;
 
-        // Parse remaining assignments
         int[] remainingAssignments = new int[categories.size()];
         for (int i = 0; i < categories.size(); i++) {
             try {
@@ -973,27 +967,41 @@ public class GradeBookGUI extends JFrame {
             }
         }
 
-        // Check if it's possible to achieve desired grade at all
-        // Quick feasibility check: assume all future assignments = 100%
+        // Check feasibility: max out future assignments at 100%
         double maxPossibleFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, fillArray(categories.size(), 100.0));
         if (maxPossibleFinal < desiredCutoff) {
             JOptionPane.showMessageDialog(this, "It is not possible to achieve " + desiredLetterGrade + " even if all future assignments are perfect.");
             return;
         }
 
-        // Scenario 1: Close to current trend
-        double[] scenario1Scores = scenarioCloseToCurrentTrend(classRecord, remainingAssignments, desiredCutoff);
-
-        // Scenario 2+: Focus on each category in turn
         java.util.List<String> scenarioReports = new java.util.ArrayList<>();
-        scenarioReports.add("Scenario 1 (Close to Current Trend):\n" + scenarioReport(classRecord, categories, remainingAssignments, scenario1Scores));
-
-        for (int i = 0; i < categories.size(); i++) {
-            double[] focusedScores = scenarioFocusOnCategory(classRecord, remainingAssignments, desiredCutoff, i);
-            scenarioReports.add("Scenario " + (i + 2) + " (Focus on " + categories.get(i).getName() + "):\n" + scenarioReport(classRecord, categories, remainingAssignments, focusedScores));
+        // Lazy Scenario: only if current final with minimal effort (0% on all future) is already >= desiredCutoff.
+        double lazyFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, fillArray(categories.size(), 0.0));
+        if (lazyFinal >= desiredCutoff) {
+            // We can do nothing and still achieve desired grade
+            scenarioReports.add("Scenario L (Lazy):\n" + scenarioReport(classRecord, categories, remainingAssignments, fillArray(categories.size(), 0.0)));
+        } else if (lazyFinal < desiredCutoff) {
+            // We are currently above desired grade (as per your clarification)
+            // but zero future assignments drop us below the cutoff.
+            // Let's find minimal scores needed.
+            double[] lazyScores = scenarioLazyMinimalEffort(classRecord, remainingAssignments, desiredCutoff);
+            scenarioReports.add("Scenario L (Lazy):\n" + scenarioReport(classRecord, categories, remainingAssignments, lazyScores));
         }
 
-        // Display results
+        // Scenario 1: Close to current trend
+        double[] scenario1Scores = scenarioCloseToCurrentTrend(classRecord, remainingAssignments, desiredCutoff);
+        scenarioReports.add("Scenario 1 (Close to Current Trend):\n" + scenarioReport(classRecord, categories, remainingAssignments, scenario1Scores));
+
+        // Additional scenarios: focus on each category (only if it has remaining assignments)
+        int scenarioCounter = 2 + scenarioReports.size(); // Adjust scenario numbering based on how many we have so far
+        for (int i = 0; i < categories.size(); i++) {
+            if (remainingAssignments[i] > 0) {
+                double[] focusedScores = scenarioFocusOnCategory(classRecord, remainingAssignments, desiredCutoff, i);
+                scenarioReports.add("Scenario " + scenarioCounter++ + " (Focus on " + categories.get(i).getName() + "):\n"
+                        + scenarioReport(classRecord, categories, remainingAssignments, focusedScores));
+            }
+        }
+
         String fullReport = "Desired Letter Grade: " + desiredLetterGrade + " (Cutoff: " + desiredCutoff + "%)\n\n";
         for (String rep : scenarioReports) {
             fullReport += rep + "\n\n";
@@ -1003,20 +1011,43 @@ public class GradeBookGUI extends JFrame {
     }
 
     /**
-     * Returns the cutoff percentage for a given letter grade from the scale map.
-     * If not found, returns -1.
+     * This scenario tries to find minimal future scores needed if currently at/above desired grade but
+     * going forward zero scores would drop below the cutoff.
+     * We'll start from all zeros and increment all categories slightly until we reach the cutoff.
+     * This is a simplistic approach; you can refine it using binary search if desired.
+     */
+    private double[] scenarioLazyMinimalEffort(ClassRecord classRecord, int[] remainingAssignments, double desiredCutoff) {
+        ArrayList<Category> categories = classRecord.getCategories();
+        double[] futureScores = fillArray(categories.size(), 0.0);
+
+        // Simple increment approach: we try small increments across all categories until we reach the cutoff
+        double increment = 0.5;
+        double currentFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, futureScores);
+
+        while (currentFinal < desiredCutoff) {
+            boolean changed = false;
+            for (int i = 0; i < futureScores.length; i++) {
+                if (remainingAssignments[i] > 0 && futureScores[i] < 100.0) {
+                    futureScores[i] = Math.min(100.0, futureScores[i] + increment);
+                    changed = true;
+                }
+            }
+            currentFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, futureScores);
+            if (!changed) break;
+        }
+
+        // If needed, we could try to lower some categories again to find truly minimal scores,
+        // but this at least ensures we meet the cutoff with small increments.
+        return futureScores;
+    }
+
+    /**
+     * Returns the cutoff percentage for a given letter grade.
      */
     private double getCutoffForLetterGrade(String letterGrade, TreeMap<Double, String> scaleMap) {
-        // scaleMap is in reverse order (highest to lowest cutoff)
-        // We look for the entry whose value matches letterGrade
-        // The key is the cutoff for that letter.
-        // Since multiple letters map to different cutoffs, we find the lowest cutoff that gives that letter.
         double foundCutoff = -1.0;
         for (Map.Entry<Double, String> entry : scaleMap.entrySet()) {
             if (entry.getValue().equalsIgnoreCase(letterGrade)) {
-                // The first one we encounter in descending order would be the highest cutoff for that letter.
-                // We actually just need the cutoff associated with that letter.
-                // If multiple entries have the same letter grade, we take the highest cutoff (entry key).
                 foundCutoff = entry.getKey();
                 break;
             }
@@ -1024,15 +1055,8 @@ public class GradeBookGUI extends JFrame {
         return foundCutoff;
     }
 
-    /**
-     * Calculates a hypothetical final grade given a certain set of future scores.
-     * Here futureScores[i] represents the average grade you plan to get on ALL remaining assignments in that category.
-     * We assume all new assignments are equal and high enough that dropping logic will just drop old low grades if needed.
-     */
     private double calculateHypotheticalFinalWithGivenScores(ClassRecord classRecord, int[] remainingAssignments, double[] futureScores) {
         double finalGrade = 0.0;
-
-        // Compute each category's new average:
         for (int i = 0; i < classRecord.getCategories().size(); i++) {
             Category cat = classRecord.getCategories().get(i);
             ArrayList<Double> allGrades = new ArrayList<>(cat.getGrades());
@@ -1044,13 +1068,9 @@ public class GradeBookGUI extends JFrame {
             finalGrade += avg * (cat.getWeight() / 100.0);
         }
 
-        // Add extra credit
         finalGrade += classRecord.getExtraCredit();
-
-        // Ensure final does not exceed 100
         if (finalGrade > 100.0) finalGrade = 100.0;
 
-        // Apply rounding if necessary
         if (classRecord.isUsesRounding()) {
             TreeMap<Double, String> scaleMapDesc = classRecord.getGradingScale().getScale();
             Double nextCutoff = null;
@@ -1074,9 +1094,6 @@ public class GradeBookGUI extends JFrame {
         return finalGrade;
     }
 
-    /**
-     * Calculate average after dropping the lowest numDrops grades.
-     */
     private double calculateAverageWithDrops(ArrayList<Double> grades, int numDrops) {
         if (grades.isEmpty()) return 0.0;
         grades.sort(Double::compareTo);
@@ -1090,45 +1107,42 @@ public class GradeBookGUI extends JFrame {
         return sum / considered;
     }
 
-    /**
-     * Returns an array filled with the specified value.
-     */
     private double[] fillArray(int length, double val) {
         double[] arr = new double[length];
         for (int i = 0; i < length; i++) arr[i] = val;
         return arr;
     }
 
-    /**
-     * Scenario 1: Close to current trend.
-     * Strategy:
-     * 1. Start with future scores equal to the current average of each category (or averageOfAverages if empty).
-     * 2. Gradually increase them until we reach or surpass the desired cutoff.
-     */
+    private double calcAverageOfAverages(ArrayList<Category> categories) {
+        ArrayList<Double> existingAverages = new ArrayList<>();
+        for (Category category : categories) {
+            if (!category.getGrades().isEmpty()) {
+                existingAverages.add(category.calculateAverage());
+            }
+        }
+        if (existingAverages.isEmpty()) return 0.0;
+        double sum = 0.0;
+        for (double avg : existingAverages) sum += avg;
+        return sum / existingAverages.size();
+    }
+
     private double[] scenarioCloseToCurrentTrend(ClassRecord classRecord, int[] remainingAssignments, double desiredCutoff) {
         ArrayList<Category> categories = classRecord.getCategories();
         double[] futureScores = new double[categories.size()];
-
-        // Calculate averageOfAverages for categories with no grades
         double averageOfAverages = calcAverageOfAverages(categories);
 
-        // Initialize future scores based on current trend
         for (int i = 0; i < categories.size(); i++) {
             Category cat = categories.get(i);
             double avg = cat.getGrades().isEmpty() ? averageOfAverages : cat.calculateAverage();
             futureScores[i] = avg;
         }
 
-        // Check if we already meet the desired cutoff
         double currentFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, futureScores);
         if (currentFinal >= desiredCutoff) {
             return futureScores;
         }
 
-        // Increase scores gradually
-        // We'll do a simple incremental approach:
-        // Increase all categories proportionally until reaching the cutoff or until we hit 100 for all.
-        double increment = 0.5; // incremental step
+        double increment = 0.5;
         while (currentFinal < desiredCutoff) {
             boolean canIncrease = false;
             for (int i = 0; i < futureScores.length; i++) {
@@ -1138,19 +1152,11 @@ public class GradeBookGUI extends JFrame {
                 }
             }
             currentFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, futureScores);
-            if (!canIncrease) break; // all are at 100 and still not reached desiredCutoff
+            if (!canIncrease) break;
         }
-
         return futureScores;
     }
 
-    /**
-     * Scenario 2+: Focus on a specific category (index focusIndex).
-     * Strategy:
-     * 1. Set the focus category's future scores very high (try 100).
-     * 2. Set others to their current averages.
-     * 3. Check if we meet desired cutoff, if not, raise non-focused categories gradually.
-     */
     private double[] scenarioFocusOnCategory(ClassRecord classRecord, int[] remainingAssignments, double desiredCutoff, int focusIndex) {
         ArrayList<Category> categories = classRecord.getCategories();
         double averageOfAverages = calcAverageOfAverages(categories);
@@ -1158,7 +1164,7 @@ public class GradeBookGUI extends JFrame {
         double[] futureScores = new double[categories.size()];
         for (int i = 0; i < categories.size(); i++) {
             if (i == focusIndex) {
-                futureScores[i] = 100.0; // Max out the focus category
+                futureScores[i] = 100.0;
             } else {
                 Category cat = categories.get(i);
                 double avg = cat.getGrades().isEmpty() ? averageOfAverages : cat.calculateAverage();
@@ -1167,11 +1173,8 @@ public class GradeBookGUI extends JFrame {
         }
 
         double currentFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, futureScores);
-        if (currentFinal >= desiredCutoff) {
-            return futureScores;
-        }
+        if (currentFinal >= desiredCutoff) return futureScores;
 
-        // If not enough, raise the other categories incrementally (except focus, which is already at 100)
         double increment = 1.0;
         boolean improved = true;
         while (currentFinal < desiredCutoff && improved) {
@@ -1184,31 +1187,9 @@ public class GradeBookGUI extends JFrame {
             }
             currentFinal = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, futureScores);
         }
-
         return futureScores;
     }
 
-    /**
-     * Computes the average of existing category averages for categories with grades.
-     */
-    private double calcAverageOfAverages(ArrayList<Category> categories) {
-        ArrayList<Double> existingAverages = new ArrayList<>();
-        for (Category category : categories) {
-            if (!category.getGrades().isEmpty()) {
-                existingAverages.add(category.calculateAverage());
-            }
-        }
-
-        if (existingAverages.isEmpty()) return 0.0;
-
-        double sum = 0.0;
-        for (double avg : existingAverages) sum += avg;
-        return sum / existingAverages.size();
-    }
-
-    /**
-     * Generate a report string for a given scenario's scores.
-     */
     private String scenarioReport(ClassRecord classRecord, ArrayList<Category> categories, int[] remainingAssignments, double[] scores) {
         double finalGrade = calculateHypotheticalFinalWithGivenScores(classRecord, remainingAssignments, scores);
         String finalLetter = classRecord.getGradingScale().getLetterGrade(finalGrade);
