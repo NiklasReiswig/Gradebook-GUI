@@ -12,6 +12,7 @@ public class ClassRecord implements Serializable {
     private GradingScale gradingScale;
     private boolean usesRounding; // Indicates if rounding is used
     private double roundingThreshold; // Number of points for rounding
+    private double extraCredit; // Extra credit points added to final grade
 
     public ClassRecord(String name, GradingScale gradingScale, boolean usesRounding, double roundingThreshold) {
         this.name = name;
@@ -19,27 +20,16 @@ public class ClassRecord implements Serializable {
         this.gradingScale = gradingScale;
         this.usesRounding = usesRounding;
         this.roundingThreshold = roundingThreshold;
+        this.extraCredit = 0.0;
     }
 
+    // Getters and Setters
     public String getName() {
         return name;
     }
 
-    public void addCategory(Category category) {
-        categories.add(category);
-    }
-
     public ArrayList<Category> getCategories() {
         return categories;
-    }
-
-    public Category getCategoryByName(String name) {
-        for (Category category : categories) {
-            if (category.getName().equalsIgnoreCase(name)) {
-                return category;
-            }
-        }
-        return null;
     }
 
     public GradingScale getGradingScale() {
@@ -54,20 +44,45 @@ public class ClassRecord implements Serializable {
         return roundingThreshold;
     }
 
-    public void setUsesRounding(boolean usesRounding) {
-        this.usesRounding = usesRounding;
+    public void addCategory(Category category) {
+        categories.add(category);
     }
 
-    public void setRoundingThreshold(double roundingThreshold) {
-        this.roundingThreshold = roundingThreshold;
+    public Category getCategoryByName(String categoryName) {
+        for (Category category : categories) {
+            if (category.getName().equalsIgnoreCase(categoryName)) {
+                return category;
+            }
+        }
+        return null;
+    }
+
+    // Extra Credit Methods
+    public double getExtraCredit() {
+        return extraCredit;
+    }
+
+    public void setExtraCredit(double extraCredit) {
+        if (extraCredit < 0.0) {
+            throw new IllegalArgumentException("Extra credit cannot be negative.");
+        }
+        this.extraCredit = extraCredit;
     }
 
     /**
-     * Calculates the final grade based on category averages and weights.
+     * Resets the extra credit to zero.
+     */
+    public void resetExtraCredit() {
+        this.extraCredit = 0.0;
+    }
+
+    /**
+     * Calculates the final grade based on category averages, weights, and extra credit.
      * For categories with no grades, assigns the average of existing category averages.
      * Applies rounding if enabled and within the specified threshold.
+     * Ensures the final grade does not exceed 100%.
      *
-     * @return The final grade after applying rounding logic.
+     * @return The final grade after applying extra credit and rounding logic.
      */
     public double calculateFinalGrade() {
         double finalGrade = 0.0;
@@ -112,14 +127,15 @@ public class ClassRecord implements Serializable {
 
         // Apply rounding if enabled
         if (usesRounding) {
-            // Retrieve the grading scale map in ascending order
-            TreeMap<Double, String> scaleMapAsc = new TreeMap<>(gradingScale.getScale());
+            // Retrieve the grading scale map in descending order
+            TreeMap<Double, String> scaleMapDesc = gradingScale.getScale();
 
             Double nextCutoff = null;
-            for (Map.Entry<Double, String> entry : scaleMapAsc.entrySet()) {
+            for (Map.Entry<Double, String> entry : scaleMapDesc.entrySet()) {
                 if (finalGrade < entry.getKey()) {
                     nextCutoff = entry.getKey();
-                    break;
+                } else {
+                    break; // Found the appropriate cutoff
                 }
             }
 
@@ -133,6 +149,17 @@ public class ClassRecord implements Serializable {
             // Round to two decimal places without rounding up
             finalGrade = Math.round(finalGrade * 100.0) / 100.0;
         }
+
+        // Add extra credit
+        finalGrade += extraCredit;
+
+        // Ensure final grade does not exceed 100%
+        if (finalGrade > 100.0) {
+            finalGrade = 100.0;
+        }
+
+        // Round again if necessary after adding extra credit
+        finalGrade = Math.round(finalGrade * 100.0) / 100.0;
 
         return finalGrade;
     }

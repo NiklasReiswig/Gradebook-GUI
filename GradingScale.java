@@ -18,7 +18,6 @@ public class GradingScale implements Serializable {
 
     /**
      * Retrieves the letter grade corresponding to a given percentage.
-     *
      * @param percentage The percentage to evaluate.
      * @return The corresponding letter grade.
      */

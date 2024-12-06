@@ -4,10 +4,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 
 public class Category implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private String name;
-    private double weight;
-    private ArrayList<Double> grades;
+    private double weight; // Weight as a percentage
     private int numGradesDropped; // Number of lowest grades to drop
+    private ArrayList<Double> grades;
 
     public Category(String name, double weight, int numGradesDropped) {
         this.name = name;
@@ -24,16 +26,12 @@ public class Category implements Serializable {
         return weight;
     }
 
-    public ArrayList<Double> getGrades() {
-        return grades;
-    }
-
     public int getNumGradesDropped() {
         return numGradesDropped;
     }
 
-    public void setNumGradesDropped(int numGradesDropped) {
-        this.numGradesDropped = numGradesDropped;
+    public ArrayList<Double> getGrades() {
+        return grades;
     }
 
     public void addGrade(double grade) {
@@ -52,20 +50,22 @@ public class Category implements Serializable {
         }
     }
 
+    /**
+     * Calculates the average grade for this category, considering the number of lowest grades to drop.
+     *
+     * @return The average grade after dropping the lowest grades. Returns 0.0 if no grades are present.
+     */
     public double calculateAverage() {
         if (grades.isEmpty()) {
             return 0.0;
         }
 
-        // Sort grades in ascending order
         ArrayList<Double> sortedGrades = new ArrayList<>(grades);
         Collections.sort(sortedGrades);
 
-        // Drop the lowest 'numGradesDropped' grades
-        int numGradesToConsider = sortedGrades.size() - numGradesDropped;
-        if (numGradesToConsider <= 0) {
-            // All grades are dropped
-            return 0.0;
+        int gradesToConsider = sortedGrades.size() - numGradesDropped;
+        if (gradesToConsider <= 0) {
+            return 0.0; // All grades are dropped
         }
 
         double sum = 0.0;
@@ -73,38 +73,6 @@ public class Category implements Serializable {
             sum += sortedGrades.get(i);
         }
 
-        return sum / numGradesToConsider;
-    }
-
-    public double calculateMedian() {
-        if (grades.isEmpty()) {
-            return 0.0;
-        }
-
-        ArrayList<Double> sortedGrades = new ArrayList<>(grades);
-        Collections.sort(sortedGrades);
-
-        int size = sortedGrades.size();
-        if (size % 2 == 1) {
-            // Odd number of grades
-            return sortedGrades.get(size / 2);
-        } else {
-            // Even number of grades
-            return (sortedGrades.get(size / 2 - 1) + sortedGrades.get(size / 2)) / 2.0;
-        }
-    }
-
-    public double getHighestGrade() {
-        if (grades.isEmpty()) {
-            return 0.0;
-        }
-        return Collections.max(grades);
-    }
-
-    public double getLowestGrade() {
-        if (grades.isEmpty()) {
-            return 0.0;
-        }
-        return Collections.min(grades);
+        return sum / gradesToConsider;
     }
 }
